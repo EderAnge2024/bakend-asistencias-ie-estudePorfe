@@ -1,0 +1,20 @@
+# Dependencias
+node_modules/
+
+# Archivos de entorno (Secretos y credenciales)
+.env
+.env.local
+.env.production
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Archivos del sistema operativo y editores
+.DS_Store
+.vscode/
+.idea/
+
+# Scripts de prueba temporales
+test_*.js

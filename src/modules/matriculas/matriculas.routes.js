@@ -1,0 +1,12 @@
+const express = require('express');
+const router  = express.Router();
+const ctrl    = require('./matriculas.controller');
+const { autenticar } = require('../auth/auth.middleware');
+const { authorize }  = require('../../shared/middleware/authorize');
+const ADMIN = authorize('DIRECTOR','ADMIN','SUBDIRECTOR','SECRETARIO');
+router.get('/',                           autenticar, ADMIN, ctrl.listar);
+router.get('/estudiante/:id_estudiante/activa', autenticar, ADMIN, ctrl.matriculaActiva);
+router.get('/:id',                        autenticar, ADMIN, ctrl.obtener);
+router.post('/',                          autenticar, ADMIN, ctrl.crear);
+router.put('/:id',                        autenticar, ADMIN, ctrl.actualizar);
+module.exports = router;

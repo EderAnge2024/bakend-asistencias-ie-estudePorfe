@@ -1,0 +1,10 @@
+const svc = require('./estudiantes.service');
+const { ok, created } = require('../../shared/utils/response');
+const listar      = async (req,res,next) => { try { ok(res, await svc.listar(req.query)); } catch(e){next(e);} };
+const listarMisEstudiantes = async (req, res, next) => { try { ok(res, await svc.listarMisEstudiantes(req.user)); } catch (e) { next(e); } };
+const obtener     = async (req,res,next) => { try { ok(res, await svc.obtener(req.params.id)); } catch(e){next(e);} };
+const crear       = async (req,res,next) => { try { created(res, await svc.crear(req.body), 'Estudiante creado.'); } catch(e){next(e);} };
+const actualizar  = async (req,res,next) => { try { ok(res, await svc.actualizar(req.params.id, req.body), 'Estudiante actualizado.'); } catch(e){next(e);} };
+const toggleEstado= async (req,res,next) => { try { ok(res, await svc.toggleEstado(req.params.id, req.body.estado)); } catch(e){next(e);} };
+const cargaMasiva = async (req,res,next) => { try { created(res, await svc.cargaMasiva(req.user, req.body.estudiantes || req.body), 'Carga masiva procesada.'); } catch(e){next(e);} };
+module.exports = { listar, listarMisEstudiantes, obtener, crear, actualizar, toggleEstado, cargaMasiva };
