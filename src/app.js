@@ -23,6 +23,19 @@ app.get('/health', (_req, res) => {
 });
 
 // -------------------------------------------------------
+// Ruta raíz - Bienvenida
+// -------------------------------------------------------
+app.get('/', (_req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'API Sistema de Asistencias IE',
+    version: 'v1',
+    health: '/health',
+    api: '/api/v1'
+  });
+});
+
+// -------------------------------------------------------
 // Rutas de la API v1
 // -------------------------------------------------------
 const BASE = '/api/v1';
