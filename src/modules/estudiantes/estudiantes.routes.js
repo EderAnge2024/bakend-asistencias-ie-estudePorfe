@@ -3,8 +3,8 @@ const router  = express.Router();
 const ctrl    = require('./estudiantes.controller');
 const { autenticar } = require('../auth/auth.middleware');
 const { authorize }  = require('../../shared/middleware/authorize');
-const ADMIN = authorize('DIRECTOR','ADMIN','SUBDIRECTOR','SECRETARIO');
-const DOCENTE = authorize('DOCENTE','DIRECTOR','ADMIN');
+const ADMIN = authorize('DIRECTOR','ADMIN','ADMINISTRADOR','SUBDIRECTOR','ESPECIALISTA','SECRETARIO');
+const DOCENTE = authorize('DOCENTE','DIRECTOR','ADMIN','ADMINISTRADOR','SUBDIRECTOR','ESPECIALISTA');
 
 router.get('/mis-estudiantes', autenticar, DOCENTE, ctrl.listarMisEstudiantes);
 router.post('/carga-masiva',    autenticar, ADMIN, ctrl.cargaMasiva);

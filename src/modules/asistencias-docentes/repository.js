@@ -37,7 +37,10 @@ const registrarSalida = async (id_asistencia, d) => {
 
 const findPropia = async (id_docente, fecha_inicio, fecha_fin) => {
   const { rows } = await db.query(
-    'SELECT * FROM asistencias_docentes WHERE id_docente=$1 AND fecha BETWEEN $2 AND $3 ORDER BY fecha DESC',
+    `SELECT * FROM asistencias_docentes 
+     WHERE (id_docente=$1 OR id_docente IN (SELECT id_docente FROM docentes WHERE id_usuario=$1)) 
+       AND fecha BETWEEN $2 AND $3 
+     ORDER BY fecha DESC, hora_entrada DESC`,
     [id_docente, fecha_inicio, fecha_fin]
   );
   return rows;

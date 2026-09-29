@@ -44,11 +44,28 @@ app.use(`${BASE}/auth`,                    require('./modules/auth/auth.routes')
 app.use(`${BASE}/configuracion`,           require('./modules/configuracion/configuracion.routes'));
 app.use(`${BASE}/horarios`,                require('./modules/horarios/horarios.routes'));
 app.use(`${BASE}/eventos`,                 require('./modules/eventos/eventos.routes'));
-app.use(`${BASE}/asistencias/docentes`,    require('./modules/asistencias-docentes/routes'));
+const asistenciasDocentesRoutes = require('./modules/asistencias-docentes/routes');
+const asistenciasEstudiantesRoutes = require('./modules/asistencias-estudiantes/routes');
+
+app.use(`${BASE}/asistencias/docentes`,    asistenciasDocentesRoutes);
+app.use(`${BASE}/asistencias/docente`,     asistenciasDocentesRoutes);
+app.use(`${BASE}/asistencia/docentes`,     asistenciasDocentesRoutes);
+app.use(`${BASE}/asistencia/docente`,      asistenciasDocentesRoutes);
+app.use(`${BASE}/asistencias-docentes`,    asistenciasDocentesRoutes);
+app.use(`${BASE}/asistencia-docentes`,     asistenciasDocentesRoutes);
+app.use(`${BASE}/asistencia-docente`,      asistenciasDocentesRoutes);
+
 app.use(`${BASE}/estudiantes`,             require('./modules/estudiantes/estudiantes.routes'));
 app.use(`${BASE}/matriculas`,              require('./modules/matriculas/matriculas.routes'));
 app.use(`${BASE}/qr`,                      require('./modules/qr/qr.routes'));
-app.use(`${BASE}/asistencias/estudiantes`, require('./modules/asistencias-estudiantes/routes'));
+
+app.use(`${BASE}/asistencias/estudiantes`, asistenciasEstudiantesRoutes);
+app.use(`${BASE}/asistencias/estudiante`,  asistenciasEstudiantesRoutes);
+app.use(`${BASE}/asistencia/estudiantes`,  asistenciasEstudiantesRoutes);
+app.use(`${BASE}/asistencia/estudiante`,   asistenciasEstudiantesRoutes);
+app.use(`${BASE}/asistencias-estudiantes`, asistenciasEstudiantesRoutes);
+app.use(`${BASE}/asistencia-estudiantes`,  asistenciasEstudiantesRoutes);
+app.use(`${BASE}/asistencia-estudiante`,   asistenciasEstudiantesRoutes);
 
 // -------------------------------------------------------
 // 404

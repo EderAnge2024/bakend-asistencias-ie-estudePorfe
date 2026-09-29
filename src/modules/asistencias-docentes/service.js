@@ -127,7 +127,7 @@ async function registrarSalida(usuario, body) {
 }
 
 async function consultarPropia(usuario, query) {
-  const { id_docente } = usuario;
+  const id_docente = usuario.id_docente || usuario.id_usuario || usuario.id;
   const hoy = getFechaHoy();
   const fecha_inicio = query.fecha_inicio || hoy;
   const fecha_fin    = query.fecha_fin    || hoy;
