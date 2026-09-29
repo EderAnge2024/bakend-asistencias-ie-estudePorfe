@@ -78,22 +78,43 @@ const findByInstitucion = async (id_institucion, fecha_inicio, fecha_fin, estado
 
   // Si hay registros, enriquecer con nombres, apellidos y DNI consultando dbMonitoreo
   if (asistencias && asistencias.length > 0 && dbMonitoreo) {
-    const docIds = [...new Set(asistencias.map(a => a.id_docente).filter(Boolean))];
+    const docIds = [...new Set(asistencias.map(a => Number(a.id_docente)).filter(Boolean))];
     if (docIds.length > 0) {
       try {
         const { rows: docentes } = await dbMonitoreo.query(
-          `SELECT d.id_docente, d.id_usuario, u.dni, u.nombres, u.apellidos
+          `SELECT d.id_docente, d.id_usuario, d.dni, d.nombres, d.apellidos,
+                  u.nombres as u_nombres, u.apellidos as u_apellidos, u.dni as u_dni
            FROM docentes d
-           JOIN usuarios u ON d.id_usuario = u.id_usuario
-           WHERE d.id_docente = ANY($1::bigint[]) OR d.id_usuario = ANY($1::bigint[])`,
+           LEFT JOIN usuarios u ON d.id_usuario = u.id_usuario
+           WHERE d.id_docente = ANY($1::int[])`,
           [docIds]
         );
 
+        // Mapa indexado EXCLUSIVAMENTE por id_docente para evitar colisiones
         const mapa = {};
         docentes.forEach(d => {
-          mapa[String(d.id_docente)] = d;
-          if (d.id_usuario) mapa[String(d.id_usuario)] = d;
+          mapa[String(d.id_docente)] = {
+            nombres: d.nombres || d.u_nombres || '',
+            apellidos: d.apellidos || d.u_apellidos || '',
+            dni: d.dni || d.u_dni || ''
+          };
         });
+
+        // Fallback: si algún registro guardó id_usuario en lugar de id_docente
+        const faltantes = docIds.filter(id => !mapa[String(id)]);
+        if (faltantes.length > 0) {
+          const { rows: usuariosExtra } = await dbMonitoreo.query(
+            `SELECT id_usuario, dni, nombres, apellidos FROM usuarios WHERE id_usuario = ANY($1::int[])`,
+            [faltantes]
+          );
+          usuariosExtra.forEach(u => {
+            mapa[String(u.id_usuario)] = {
+              nombres: u.nombres || '',
+              apellidos: u.apellidos || '',
+              dni: u.dni || ''
+            };
+          });
+        }
 
         asistencias.forEach(a => {
           const doc = mapa[String(a.id_docente)];

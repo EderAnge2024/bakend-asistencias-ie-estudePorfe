@@ -18,7 +18,8 @@ function obtenerDiaSemana() {
 }
 
 async function registrarEntrada(usuario, body) {
-  const { id_docente, id_institucion } = usuario;
+  const id_docente = usuario.id_docente || usuario.id_usuario || usuario.id;
+  const { id_institucion } = usuario;
   const { latitud, longitud, wifi_ssid, wifi_bssid, dispositivo } = body;
   const ip = body.ip_entrada || null;
 
@@ -89,7 +90,8 @@ async function registrarEntrada(usuario, body) {
 }
 
 async function registrarSalida(usuario, body) {
-  const { id_docente, id_institucion } = usuario;
+  const id_docente = usuario.id_docente || usuario.id_usuario || usuario.id;
+  const { id_institucion } = usuario;
   const { latitud, longitud, wifi_ssid, wifi_bssid, dispositivo } = body;
   const ip = body.ip_salida || null;
   const fecha = getFechaHoy();
