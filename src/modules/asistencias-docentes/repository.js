@@ -1,10 +1,12 @@
 const db = require('../../config/database');
+const dbMonitoreo = require('../../config/databaseMonitoreo');
 
 const findByDocenteYFecha = async (id_docente, fecha) => {
   const { rows } = await db.query(
-    'SELECT * FROM asistencias_docentes WHERE id_docente=$1 AND fecha=$2', [id_docente, fecha]
+    'SELECT * FROM asistencias_docentes WHERE (id_docente=$1 OR id_docente::text=$1::text) AND fecha=$2',
+    [id_docente, fecha]
   );
-  return rows[0]||null;
+  return rows[0] || null;
 };
 
 const registrarEntrada = async (d) => {
@@ -38,7 +40,7 @@ const registrarSalida = async (id_asistencia, d) => {
 const findPropia = async (id_docente, fecha_inicio, fecha_fin) => {
   const { rows } = await db.query(
     `SELECT * FROM asistencias_docentes 
-     WHERE (id_docente=$1 OR id_docente IN (SELECT id_docente FROM docentes WHERE id_usuario=$1)) 
+     WHERE (id_docente=$1 OR id_docente::text=$1::text) 
        AND fecha BETWEEN $2 AND $3 
      ORDER BY fecha DESC, hora_entrada DESC`,
     [id_docente, fecha_inicio, fecha_fin]
@@ -48,7 +50,11 @@ const findPropia = async (id_docente, fecha_inicio, fecha_fin) => {
 
 const findByDocente = async (id_docente, id_institucion, fecha_inicio, fecha_fin) => {
   const { rows } = await db.query(
-    'SELECT * FROM asistencias_docentes WHERE id_docente=$1 AND id_institucion=$2 AND fecha BETWEEN $3 AND $4 ORDER BY fecha DESC',
+    `SELECT * FROM asistencias_docentes 
+     WHERE (id_docente=$1 OR id_docente::text=$1::text) 
+       AND (id_institucion=$2 OR id_institucion::text=$2::text) 
+       AND fecha BETWEEN $3 AND $4 
+     ORDER BY fecha DESC, hora_entrada DESC`,
     [id_docente, id_institucion, fecha_inicio, fecha_fin]
   );
   return rows;
@@ -56,32 +62,73 @@ const findByDocente = async (id_docente, id_institucion, fecha_inicio, fecha_fin
 
 const findByInstitucion = async (id_institucion, fecha_inicio, fecha_fin, estado) => {
   let q = `
-    SELECT a.*, COALESCE(u.nombres, d.nombres, '') AS nombres, COALESCE(u.apellidos, d.apellido_paterno, '') AS apellidos, COALESCE(u.dni, d.dni, '') AS dni
-    FROM asistencias_docentes a
-    LEFT JOIN docentes d ON a.id_docente = d.id_docente
-    LEFT JOIN usuarios u ON (d.id_usuario = u.id_usuario OR a.id_docente = u.id_usuario)
-    WHERE a.id_institucion = $1 AND a.fecha BETWEEN $2 AND $3
+    SELECT *
+    FROM asistencias_docentes
+    WHERE (id_institucion = $1 OR id_institucion::text = $1::text)
+      AND fecha BETWEEN $2 AND $3
   `;
   const vals = [id_institucion, fecha_inicio, fecha_fin];
   if (estado) {
-    q += ' AND a.estado_asistencia = $4';
+    q += ' AND estado_asistencia = $4';
     vals.push(estado);
   }
-  q += ' ORDER BY a.fecha DESC, a.hora_entrada DESC';
-  const { rows } = await db.query(q, vals);
-  return rows;
-};
+  q += ' ORDER BY fecha DESC, hora_entrada DESC';
+  
+  const { rows: asistencias } = await db.query(q, vals);
 
+  // Si hay registros, enriquecer con nombres, apellidos y DNI consultando dbMonitoreo
+  if (asistencias && asistencias.length > 0 && dbMonitoreo) {
+    const docIds = [...new Set(asistencias.map(a => a.id_docente).filter(Boolean))];
+    if (docIds.length > 0) {
+      try {
+        const { rows: docentes } = await dbMonitoreo.query(
+          `SELECT d.id_docente, d.id_usuario, u.dni, u.nombres, u.apellidos
+           FROM docentes d
+           JOIN usuarios u ON d.id_usuario = u.id_usuario
+           WHERE d.id_docente = ANY($1::bigint[]) OR d.id_usuario = ANY($1::bigint[])`,
+          [docIds]
+        );
+
+        const mapa = {};
+        docentes.forEach(d => {
+          mapa[String(d.id_docente)] = d;
+          if (d.id_usuario) mapa[String(d.id_usuario)] = d;
+        });
+
+        asistencias.forEach(a => {
+          const doc = mapa[String(a.id_docente)];
+          if (doc) {
+            a.nombres = doc.nombres;
+            a.apellidos = doc.apellidos;
+            a.dni = doc.dni;
+          }
+        });
+      } catch (errMon) {
+        console.warn('[Asistencias Docentes] dbMonitoreo no disponible para nombres:', errMon.message);
+      }
+    }
+  }
+
+  return asistencias;
+};
 
 const resumenPorInstitucion = async (id_institucion, fecha_inicio, fecha_fin) => {
   const { rows } = await db.query(`
     SELECT estado_asistencia, COUNT(*) AS total
     FROM asistencias_docentes
-    WHERE id_institucion=$1 AND fecha BETWEEN $2 AND $3
+    WHERE (id_institucion=$1 OR id_institucion::text=$1::text) AND fecha BETWEEN $2 AND $3
     GROUP BY estado_asistencia`,
     [id_institucion, fecha_inicio, fecha_fin]
   );
   return rows;
 };
 
-module.exports = { findByDocenteYFecha, registrarEntrada, registrarSalida, findPropia, findByDocente, findByInstitucion, resumenPorInstitucion };
+module.exports = {
+  findByDocenteYFecha,
+  registrarEntrada,
+  registrarSalida,
+  findPropia,
+  findByDocente,
+  findByInstitucion,
+  resumenPorInstitucion
+};
