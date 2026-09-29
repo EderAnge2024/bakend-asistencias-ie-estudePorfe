@@ -37,19 +37,27 @@ async function registrarEntrada(usuario, body) {
   if (existente)
     throw new AppError('Ya tiene una asistencia registrada para hoy.','DUPLICATE_ATTENDANCE',409);
 
-  // 4. Validacion GPS (si se proporcionan coordenadas)
+  // 4. Validacion GPS mediante formula de Haversine
   let distanciaMetros = null;
   let nivelSeguridad  = 'BAJO';
   let metodo          = 'MANUAL';
+  const tieneGps = latitud !== undefined && latitud !== null && latitud !== '' &&
+                   longitud !== undefined && longitud !== null && longitud !== '';
 
-  if (latitud !== undefined && longitud !== undefined) {
+  if (tieneGps) {
+    if (!config.latitud_ie || !config.longitud_ie) {
+      throw new AppError('La institución no tiene configuradas las coordenadas GPS.', 'CONFIG_ERROR', 400);
+    }
     distanciaMetros = calcularDistanciaMetros(
-      parseFloat(config.latitud_ie), parseFloat(config.longitud_ie),
-      parseFloat(latitud), parseFloat(longitud)
+      config.latitud_ie, config.longitud_ie,
+      latitud, longitud
     );
+    if (distanciaMetros === null || isNaN(distanciaMetros)) {
+      throw new AppError('Coordenadas GPS no válidas.', 'INVALID_COORDINATES', 422);
+    }
     if (distanciaMetros > config.radio_permitido_metros) {
       throw new AppError(
-        `Usted esta fuera de la IE. Distancia actual: ${distanciaMetros}m. Radio permitido: ${config.radio_permitido_metros}m.`,
+        `Usted está fuera de la IE. Distancia actual: ${Math.round(distanciaMetros)}m. Radio permitido: ${config.radio_permitido_metros}m.`,
         'OUTSIDE_GEOFENCE', 422
       );
     }
@@ -75,8 +83,8 @@ async function registrarEntrada(usuario, body) {
     hora_entrada          : ahora,
     estado_asistencia     : estadoAsistencia,
     metodo_entrada        : metodo,
-    latitud_entrada       : latitud   || null,
-    longitud_entrada      : longitud  || null,
+    latitud_entrada       : tieneGps ? latitud : null,
+    longitud_entrada      : tieneGps ? longitud : null,
     distancia_entrada_metros: distanciaMetros,
     wifi_ssid_entrada     : wifi_ssid  || config.wifi_ssid  || null,
     wifi_bssid_entrada    : wifi_bssid || config.wifi_bssid || null,
@@ -97,30 +105,49 @@ async function registrarSalida(usuario, body) {
   const fecha = getFechaHoy();
   const ahora = getAhora();
 
-  // Verificar que exista entrada
+  // 1. Obtener configuracion de la IE
+  const config = await confRepo.findByInstitucion(id_institucion);
+  if (!config || !config.estado)
+    throw new AppError('La institucion no tiene configuracion de asistencia activa.','CONFIG_NOT_FOUND',404);
+
+  // 2. Verificar que exista entrada
   const existente = await repo.findByDocenteYFecha(id_docente, fecha);
   if (!existente)
     throw new AppError('No tiene entrada registrada hoy.','NO_ENTRY_FOUND',404);
   if (existente.hora_salida)
     throw new AppError('Ya tiene salida registrada hoy.','DUPLICATE_EXIT',409);
 
-  // Validacion GPS de salida (opcional)
+  // 3. Validacion GPS de salida mediante formula de Haversine
   let distanciaMetros = null;
-  if (latitud !== undefined && longitud !== undefined) {
-    const config = await confRepo.findByInstitucion(id_institucion);
-    if (config) {
-      distanciaMetros = calcularDistanciaMetros(
-        parseFloat(config.latitud_ie), parseFloat(config.longitud_ie),
-        parseFloat(latitud), parseFloat(longitud)
+  const tieneGps = latitud !== undefined && latitud !== null && latitud !== '' &&
+                   longitud !== undefined && longitud !== null && longitud !== '';
+
+  if (tieneGps) {
+    if (!config.latitud_ie || !config.longitud_ie) {
+      throw new AppError('La institución no tiene configuradas las coordenadas GPS.', 'CONFIG_ERROR', 400);
+    }
+    distanciaMetros = calcularDistanciaMetros(
+      config.latitud_ie, config.longitud_ie,
+      latitud, longitud
+    );
+    if (distanciaMetros === null || isNaN(distanciaMetros)) {
+      throw new AppError('Coordenadas GPS no válidas.', 'INVALID_COORDINATES', 422);
+    }
+    if (distanciaMetros > config.radio_permitido_metros) {
+      throw new AppError(
+        `Usted está fuera de la IE. Distancia actual: ${Math.round(distanciaMetros)}m. Radio permitido: ${config.radio_permitido_metros}m.`,
+        'OUTSIDE_GEOFENCE', 422
       );
     }
+  } else if (!config.permitir_registro_manual) {
+    throw new AppError('Debe proporcionar coordenadas GPS para registrar salida.', 'GPS_REQUIRED', 422);
   }
 
   return repo.registrarSalida(existente.id_asistencia, {
     hora_salida          : ahora,
-    metodo_salida        : (latitud!==undefined&&longitud!==undefined) ? 'GPS_WIFI' : 'MANUAL',
-    latitud_salida       : latitud  || null,
-    longitud_salida      : longitud || null,
+    metodo_salida        : tieneGps ? 'GPS_WIFI' : 'MANUAL',
+    latitud_salida       : tieneGps ? latitud : null,
+    longitud_salida      : tieneGps ? longitud : null,
     distancia_salida_metros: distanciaMetros,
     wifi_ssid_salida     : wifi_ssid  || null,
     wifi_bssid_salida    : wifi_bssid || null,
