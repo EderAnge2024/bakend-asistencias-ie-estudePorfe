@@ -135,7 +135,21 @@ const consultarInstitucion = async (id_institucion, q) => {
 
 const resumen = async (id_institucion, q) => {
   const hoy = getFechaHoy();
-  return repo.resumen(id_institucion, q.fecha_inicio||hoy, q.fecha_fin||hoy);
+  const rows = await repo.resumen(id_institucion, q.fecha_inicio||hoy, q.fecha_fin||hoy);
+
+  // Transformar array [{estado_asistencia, total}] al objeto plano que espera el frontend
+  const mapa = { presentes: 0, tardanzas: 0, faltas: 0, justificados: 0 };
+  let totalGeneral = 0;
+  rows.forEach(r => {
+    const n = parseInt(r.total, 10) || 0;
+    totalGeneral += n;
+    const estado = (r.estado_asistencia || '').toUpperCase();
+    if (estado === 'PRESENTE')     mapa.presentes    += n;
+    else if (estado === 'TARDANZA')    mapa.tardanzas    += n;
+    else if (estado === 'FALTA')       mapa.faltas       += n;
+    else if (estado === 'JUSTIFICADO') mapa.justificados += n;
+  });
+  return { presentes: mapa.presentes, tardanzas: mapa.tardanzas, faltas: mapa.faltas, justificados: mapa.justificados, total: totalGeneral };
 };
 
 module.exports = { registrarPorQR, registrarManual, registrarSalida, consultarPorEstudiante, consultarInstitucion, resumen };

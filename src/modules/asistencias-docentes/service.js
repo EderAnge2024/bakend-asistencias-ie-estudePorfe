@@ -183,7 +183,21 @@ async function resumen(usuario, query) {
   const hoy = getFechaHoy();
   const fecha_inicio = query.fecha_inicio || hoy;
   const fecha_fin    = query.fecha_fin    || hoy;
-  return repo.resumenPorInstitucion(usuario.id_institucion, fecha_inicio, fecha_fin);
+  const rows = await repo.resumenPorInstitucion(usuario.id_institucion, fecha_inicio, fecha_fin);
+
+  // Transformar array [{estado_asistencia, total}] al objeto plano que espera el frontend
+  const mapa = { presentes: 0, tardanzas: 0, faltas: 0, justificados: 0 };
+  let totalGeneral = 0;
+  rows.forEach(r => {
+    const n = parseInt(r.total, 10) || 0;
+    totalGeneral += n;
+    const estado = (r.estado_asistencia || '').toUpperCase();
+    if (estado === 'PRESENTE')    mapa.presentes    += n;
+    else if (estado === 'TARDANZA')   mapa.tardanzas    += n;
+    else if (estado === 'FALTA')      mapa.faltas       += n;
+    else if (estado === 'JUSTIFICADO') mapa.justificados += n;
+  });
+  return { presentes: mapa.presentes, tardanzas: mapa.tardanzas, faltas: mapa.faltas, justificados: mapa.justificados, total: totalGeneral };
 }
 
 module.exports = { registrarEntrada, registrarSalida, consultarPropia, consultarPorDocente, consultarInstitucion, resumen };
