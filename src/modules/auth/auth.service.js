@@ -8,10 +8,11 @@ function parseGradoTutoria(gradoTutoria, fallbackGrado, fallbackSeccion) {
   if (!gradoTutoria) return { grado: fallbackGrado, seccion: fallbackSeccion };
   const str = String(gradoTutoria).trim();
   const matchNum = str.match(/\d+/);
-  const matchLetra = str.match(/[A-Za-z]/);
+  // Extraer letra de sección: busca letra entre comillas al final o la primera letra
+  const matchLetra = str.match(/["']([A-Za-z])["']/) || str.match(/\b([A-Za-z])\b/) || str.match(/([A-Za-z])/);
   return {
     grado: matchNum ? matchNum[0] : fallbackGrado,
-    seccion: matchLetra ? matchLetra[0].toUpperCase() : fallbackSeccion
+    seccion: matchLetra ? matchLetra[1].toUpperCase() : fallbackSeccion
   };
 }
 

@@ -51,25 +51,37 @@ const toggleEstado = async (id, estado) => {
 };
 
 const findMisEstudiantes = async (id_institucion, nivel, grado, seccion) => {
+  // CORRECCIÓN: Se agrega filtro por nivel para separar correctamente
+  // estudiantes de Primaria y Secundaria cuando coinciden grado y sección.
+  // También incluye el estado de asistencia del día actual via LEFT JOIN.
   const query = `
-    SELECT e.*, m.id_matricula, m.nivel, m.grado, m.seccion 
+    SELECT e.*, m.id_matricula, m.nivel, m.grado, m.seccion,
+           ae.estado_asistencia AS _asistencia_hoy,
+           ae.hora_entrada      AS _hora_entrada_hoy
     FROM estudiantes e
     JOIN matriculas m ON e.id_estudiante = m.id_estudiante
-    WHERE m.id_institucion = $1 
+    LEFT JOIN asistencias_estudiantes ae
+      ON ae.id_estudiante = e.id_estudiante
+     AND ae.fecha = CURRENT_DATE
+    WHERE m.id_institucion = $1
       AND (
-        $2::text IS NULL OR $2 = '' 
-        OR REGEXP_REPLACE(m.grado, '[^0-9]', '', 'g') = REGEXP_REPLACE($2, '[^0-9]', '', 'g')
-        OR m.grado ILIKE '%' || $2 || '%'
+        $2::text IS NULL OR $2 = ''
+        OR LOWER(TRIM(m.nivel)) = LOWER(TRIM($2))
       )
       AND (
-        $3::text IS NULL OR $3 = '' 
-        OR UPPER(TRIM(m.seccion)) = UPPER(TRIM($3))
+        $3::text IS NULL OR $3 = ''
+        OR REGEXP_REPLACE(m.grado, '[^0-9]', '', 'g') = REGEXP_REPLACE($3, '[^0-9]', '', 'g')
+        OR m.grado ILIKE '%' || $3 || '%'
       )
-      AND m.estado = 'ACTIVO' 
+      AND (
+        $4::text IS NULL OR $4 = ''
+        OR UPPER(TRIM(m.seccion)) = UPPER(TRIM($4))
+      )
+      AND m.estado = 'ACTIVO'
       AND e.estado = true
     ORDER BY e.apellido_paterno, e.apellido_materno, e.nombres
   `;
-  const { rows } = await db.query(query, [id_institucion, grado, seccion]);
+  const { rows } = await db.query(query, [id_institucion, nivel, grado, seccion]);
   return rows;
 };
 

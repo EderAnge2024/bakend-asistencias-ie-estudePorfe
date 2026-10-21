@@ -28,13 +28,22 @@ async function registrarPorQR(usuario, body) {
   if (String(matricula.id_institucion)!==String(id_institucion))
     throw new AppError('El estudiante no pertenece a esta institucion.','WRONG_INSTITUTION',403);
 
-  // 7.5 Verificar grado/seccion si es docente
-  if (usuario.rol === 'DOCENTE') {
+  // 7.5 Verificar grado/seccion/nivel si es docente tutor
+  if (usuario.rol === 'DOCENTE' || usuario.rol === 'docente') {
     if (!usuario.tutor) {
       throw new AppError('Solo el docente tutor puede registrar asistencia de estudiantes.', 'FORBIDDEN', 403);
     }
-    if (matricula.nivel !== usuario.nivel || matricula.grado !== usuario.grado || matricula.seccion !== usuario.seccion) {
-      throw new AppError(`El estudiante pertenece a ${matricula.nivel} - ${matricula.grado} ${matricula.seccion}, pero usted tiene asignado ${usuario.nivel} - ${usuario.grado} ${usuario.seccion}.`, 'WRONG_SECTION', 403);
+    const nivelMatch = !usuario.nivel || !matricula.nivel ||
+      matricula.nivel.trim().toLowerCase() === usuario.nivel.trim().toLowerCase();
+    const gradoMatch = !usuario.grado || !matricula.grado ||
+      matricula.grado.replace(/[^0-9]/g, '') === usuario.grado.replace(/[^0-9]/g, '');
+    const seccionMatch = !usuario.seccion || !matricula.seccion ||
+      matricula.seccion.trim().toUpperCase() === usuario.seccion.trim().toUpperCase();
+    if (!nivelMatch || !gradoMatch || !seccionMatch) {
+      throw new AppError(
+        `El estudiante pertenece a ${matricula.nivel} - ${matricula.grado} ${matricula.seccion}, pero usted tiene asignado ${usuario.nivel} - ${usuario.grado} ${usuario.seccion}.`,
+        'WRONG_SECTION', 403
+      );
     }
   }
 
@@ -74,12 +83,21 @@ async function registrarManual(usuario, body) {
   const matricula = await matRepo.findActivaByEstudiante(id_estudiante, id_institucion);
   if (!matricula) throw new AppError('El estudiante no tiene matricula activa.','NO_ACTIVE_MATRICULA',404);
 
-  if (usuario.rol === 'DOCENTE') {
+  if (usuario.rol === 'DOCENTE' || usuario.rol === 'docente') {
     if (!usuario.tutor) {
       throw new AppError('Solo el docente tutor puede registrar asistencia de estudiantes.', 'FORBIDDEN', 403);
     }
-    if (matricula.nivel !== usuario.nivel || matricula.grado !== usuario.grado || matricula.seccion !== usuario.seccion) {
-      throw new AppError(`El estudiante pertenece a ${matricula.nivel} - ${matricula.grado} ${matricula.seccion}. No corresponde a su sección.`, 'WRONG_SECTION', 403);
+    const nivelMatch = !usuario.nivel || !matricula.nivel ||
+      matricula.nivel.trim().toLowerCase() === usuario.nivel.trim().toLowerCase();
+    const gradoMatch = !usuario.grado || !matricula.grado ||
+      matricula.grado.replace(/[^0-9]/g, '') === usuario.grado.replace(/[^0-9]/g, '');
+    const seccionMatch = !usuario.seccion || !matricula.seccion ||
+      matricula.seccion.trim().toUpperCase() === usuario.seccion.trim().toUpperCase();
+    if (!nivelMatch || !gradoMatch || !seccionMatch) {
+      throw new AppError(
+        `El estudiante pertenece a ${matricula.nivel} - ${matricula.grado} ${matricula.seccion}. No corresponde a su sección.`,
+        'WRONG_SECTION', 403
+      );
     }
   }
 
@@ -104,12 +122,21 @@ async function registrarSalida(usuario, id_estudiante) {
   const matricula = await matRepo.findActivaByEstudiante(id_estudiante, id_institucion);
   if (!matricula) throw new AppError('El estudiante no tiene matricula activa.','NO_ACTIVE_MATRICULA',404);
 
-  if (usuario.rol === 'DOCENTE') {
+  if (usuario.rol === 'DOCENTE' || usuario.rol === 'docente') {
     if (!usuario.tutor) {
       throw new AppError('Solo el docente tutor puede registrar salida de estudiantes.', 'FORBIDDEN', 403);
     }
-    if (matricula.nivel !== usuario.nivel || matricula.grado !== usuario.grado || matricula.seccion !== usuario.seccion) {
-      throw new AppError(`El estudiante pertenece a ${matricula.nivel} - ${matricula.grado} ${matricula.seccion}. No corresponde a su sección.`, 'WRONG_SECTION', 403);
+    const nivelMatch = !usuario.nivel || !matricula.nivel ||
+      matricula.nivel.trim().toLowerCase() === usuario.nivel.trim().toLowerCase();
+    const gradoMatch = !usuario.grado || !matricula.grado ||
+      matricula.grado.replace(/[^0-9]/g, '') === usuario.grado.replace(/[^0-9]/g, '');
+    const seccionMatch = !usuario.seccion || !matricula.seccion ||
+      matricula.seccion.trim().toUpperCase() === usuario.seccion.trim().toUpperCase();
+    if (!nivelMatch || !gradoMatch || !seccionMatch) {
+      throw new AppError(
+        `El estudiante pertenece a ${matricula.nivel} - ${matricula.grado} ${matricula.seccion}. No corresponde a su sección.`,
+        'WRONG_SECTION', 403
+      );
     }
   }
 
