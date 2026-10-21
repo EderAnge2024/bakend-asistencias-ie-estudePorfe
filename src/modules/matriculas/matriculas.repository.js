@@ -1,15 +1,15 @@
 const db = require('../../config/database');
 
-const findAll = async ({ id_institucion, anio_lectivo, nivel, grado, seccion, estado, page=1, limit=50 }) => {
+const findAll = async ({ id_institucion, anio_lectivo, nivel, grado, seccion, estado, page=1, limit=1000 }) => {
   let q = `SELECT m.*, e.nombres, e.apellido_paterno, e.apellido_materno, e.dni, e.codigo_estudiante
            FROM matriculas m JOIN estudiantes e ON m.id_estudiante=e.id_estudiante WHERE m.id_institucion=$1`;
   const vals = [id_institucion]; let i = 2;
   if (anio_lectivo) { q += ` AND m.anio_lectivo=$${i++}`; vals.push(anio_lectivo); }
-  if (nivel)        { q += ` AND m.nivel=$${i++}`;        vals.push(nivel); }
-  if (grado)        { q += ` AND m.grado=$${i++}`;        vals.push(grado); }
-  if (seccion)      { q += ` AND m.seccion=$${i++}`;      vals.push(seccion); }
+  if (nivel)        { q += ` AND LOWER(TRIM(m.nivel))=LOWER(TRIM($${i++}))`; vals.push(nivel); }
+  if (grado)        { q += ` AND (REGEXP_REPLACE(m.grado, '[^0-9]', '', 'g') = REGEXP_REPLACE($${i}, '[^0-9]', '', 'g') OR m.grado ILIKE '%' || $${i} || '%')`; vals.push(grado); i++; }
+  if (seccion)      { q += ` AND UPPER(TRIM(m.seccion))=UPPER(TRIM($${i++}))`; vals.push(seccion); }
   if (estado)       { q += ` AND m.estado=$${i++}`;       vals.push(estado); }
-  q += ` ORDER BY m.grado, m.seccion, e.apellido_paterno LIMIT $${i++} OFFSET $${i++}`;
+  q += ` ORDER BY m.nivel, m.grado, m.seccion, e.apellido_paterno LIMIT $${i++} OFFSET $${i++}`;
   vals.push(Number(limit)); vals.push((Number(page)-1)*Number(limit));
   const { rows } = await db.query(q, vals);
   return rows;

@@ -44,8 +44,9 @@ const findByInstitucion = async (id_institucion, filtros) => {
            WHERE m.id_institucion=$1`;
   const vals=[id_institucion]; let i=2;
   if (filtros.fecha_inicio && filtros.fecha_fin) { q += ` AND ae.fecha BETWEEN $${i++} AND $${i++}`; vals.push(filtros.fecha_inicio); vals.push(filtros.fecha_fin); }
-  if (filtros.grado)   { q += ` AND m.grado=$${i++}`;  vals.push(filtros.grado); }
-  if (filtros.seccion) { q += ` AND m.seccion=$${i++}`; vals.push(filtros.seccion); }
+  if (filtros.nivel)   { q += ` AND LOWER(TRIM(m.nivel))=LOWER(TRIM($${i++}))`; vals.push(filtros.nivel); }
+  if (filtros.grado)   { q += ` AND (REGEXP_REPLACE(m.grado, '[^0-9]', '', 'g') = REGEXP_REPLACE($${i}, '[^0-9]', '', 'g') OR m.grado ILIKE '%' || $${i} || '%')`; vals.push(filtros.grado); i++; }
+  if (filtros.seccion) { q += ` AND UPPER(TRIM(m.seccion))=UPPER(TRIM($${i++}))`; vals.push(filtros.seccion); }
   if (filtros.estado)  { q += ` AND ae.estado_asistencia=$${i++}`; vals.push(filtros.estado); }
   q += ' ORDER BY ae.fecha DESC, e.apellido_paterno';
   const { rows } = await db.query(q, vals);

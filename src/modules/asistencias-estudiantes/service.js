@@ -156,7 +156,7 @@ const consultarInstitucion = async (id_institucion, q) => {
   const hoy = getFechaHoy();
   return repo.findByInstitucion(id_institucion, {
     fecha_inicio: q.fecha_inicio||hoy, fecha_fin: q.fecha_fin||hoy,
-    grado: q.grado, seccion: q.seccion, estado: q.estado
+    nivel: q.nivel, grado: q.grado, seccion: q.seccion, estado: q.estado
   });
 };
 
