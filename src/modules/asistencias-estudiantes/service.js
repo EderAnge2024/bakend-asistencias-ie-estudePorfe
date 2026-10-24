@@ -2,14 +2,43 @@
  * service.js - Asistencias Estudiantes
  * Registro via QR y manual.
  * La fecha/hora siempre proviene del servidor.
+ *
+ * MEJORAS:
+ * - registrarPorQR: ahora evalua PRESENTE vs TARDANZA segun el horario del dia
+ * - cerrarDia: marca FALTA automaticamente a todos los estudiantes sin registro
  */
 const repo    = require('./repository');
 const qrSvc   = require('../qr/qr.service');
 const matRepo = require('../matriculas/matriculas.repository');
 const confRepo= require('../configuracion/configuracion.repository');
+const horRepo = require('../horarios/horarios.repository');
 const AppError = require('../../shared/errors/AppError');
 const { getFechaHoy, getAhora } = require('../../shared/utils/tiempo');
 const { calcularDistanciaMetros } = require('../../shared/utils/geo');
+
+/** JS: 0=Dom,1=Lun...6=Sab -> nuestro esquema: 1=Lun...7=Dom */
+function obtenerDiaSemana() {
+  const d = new Date().getDay();
+  return d === 0 ? 7 : d;
+}
+
+/**
+ * Evalua si la hora actual es PRESENTE o TARDANZA segun el horario configurado.
+ * @param {string} horaInicio  - "HH:MM:SS"
+ * @param {number} toleranciaMin - minutos extra permitidos
+ * @returns {'PRESENTE'|'TARDANZA'}
+ */
+function evaluarEstadoEstudiante(horaInicio, toleranciaMin) {
+  const ahora = new Date();
+  const [hh, mm] = horaInicio.split(':').map(Number);
+
+  const inicioExacto = new Date(ahora);
+  inicioExacto.setHours(hh, mm, 0, 0);
+
+  const limiteConTolerancia = new Date(inicioExacto.getTime() + toleranciaMin * 60000);
+
+  return ahora <= limiteConTolerancia ? 'PRESENTE' : 'TARDANZA';
+}
 
 async function registrarPorQR(usuario, body) {
   const { token_qr, latitud, longitud, dispositivo, observaciones } = body;
@@ -52,6 +81,15 @@ async function registrarPorQR(usuario, body) {
   const existente = await repo.findByEstudianteYFecha(id_estudiante, fecha);
   if (existente) throw new AppError('El estudiante ya tiene asistencia registrada hoy.','DUPLICATE_ATTENDANCE',409);
 
+  // 9. Determinar estado PRESENTE / TARDANZA usando horario del dia
+  const diaSemana = obtenerDiaSemana();
+  const horario   = await horRepo.findVigentePorDia(id_institucion, diaSemana);
+  let estadoAsistencia = 'PRESENTE';
+  if (horario) {
+    const tolerancia = horario.tolerancia_entrada_min != null ? horario.tolerancia_entrada_min : 10;
+    estadoAsistencia = evaluarEstadoEstudiante(horario.hora_inicio, tolerancia);
+  }
+
   // Calcular distancia si hay GPS
   let distanciaMetros = null;
   if (latitud !== undefined && longitud !== undefined) {
@@ -61,11 +99,11 @@ async function registrarPorQR(usuario, body) {
     );
   }
 
-  // 9-12. Registrar asistencia
+  // 10. Registrar asistencia con estado calculado (PRESENTE o TARDANZA)
   return repo.registrar({
     id_estudiante, id_matricula: matricula.id_matricula, fecha,
     hora_entrada        : getAhora(),
-    estado_asistencia   : 'PRESENTE',
+    estado_asistencia   : estadoAsistencia,
     metodo_registro     : 'QR',
     token_qr_referencia : token_qr,
     latitud: latitud||null, longitud: longitud||null,
@@ -147,36 +185,101 @@ async function registrarSalida(usuario, id_estudiante) {
   return repo.registrarSalida(reg.id_asistencia, getAhora());
 }
 
+/**
+ * cerrarDia - Marca FALTA a todos los estudiantes activos sin registro ese dia.
+ * Puede ejecutarse manualmente (director) o como tarea programada.
+ * @param {object} usuario   - usuario autenticado con id_institucion
+ * @param {string} [fecha]   - YYYY-MM-DD; si no se pasa, se usa la fecha de hoy
+ */
+async function cerrarDia(usuario, fecha) {
+  const { id_institucion } = usuario;
+  const fechaCierre = fecha || getFechaHoy();
+
+  // Obtener todos los estudiantes activos sin registro ese dia
+  const sinRegistro = await repo.findSinRegistroPorFecha(id_institucion, fechaCierre);
+
+  if (sinRegistro.length === 0) {
+    return {
+      marcados : 0,
+      detalles : [],
+      mensaje  : 'Todos los estudiantes ya tienen asistencia registrada para esa fecha.',
+    };
+  }
+
+  const resultados = [];
+  for (const est of sinRegistro) {
+    try {
+      await repo.registrar({
+        id_estudiante    : est.id_estudiante,
+        id_matricula     : est.id_matricula,
+        fecha            : fechaCierre,
+        hora_entrada     : null,
+        estado_asistencia: 'FALTA',
+        metodo_registro  : 'ADMINISTRATIVO',
+        observaciones    : 'Marcado automático por cierre de día',
+      });
+      resultados.push({ id_estudiante: est.id_estudiante, nombres: est.nombres, estado: 'FALTA', ok: true });
+    } catch (e) {
+      resultados.push({ id_estudiante: est.id_estudiante, nombres: est.nombres, estado: 'ERROR', ok: false, error: e.message });
+    }
+  }
+
+  const marcados = resultados.filter(r => r.ok).length;
+  return { marcados, detalles: resultados, mensaje: `Se marcaron ${marcados} falta(s) por cierre de día.` };
+}
+
+const informeMensual = async (id_institucion, query) => {
+  const mes  = parseInt(query.mes  || new Date().getMonth() + 1, 10);
+  const anio = parseInt(query.anio || new Date().getFullYear(), 10);
+  const filtros = {
+    nivel:   query.nivel   || null,
+    grado:   query.grado   || null,
+    seccion: query.seccion || null,
+  };
+  // Limpiar nulos
+  Object.keys(filtros).forEach(k => { if (!filtros[k]) delete filtros[k]; });
+  return repo.findInformeMensual(id_institucion, mes, anio, filtros);
+};
+
 const consultarPorEstudiante = async (id_estudiante, q) => {
   const hoy = getFechaHoy();
-  return repo.findByEstudiante(id_estudiante, q.fecha_inicio||hoy, q.fecha_fin||hoy);
+  return repo.findByEstudiante(id_estudiante, q.fecha_inicio || hoy, q.fecha_fin || hoy);
 };
 
 const consultarInstitucion = async (id_institucion, q) => {
   const hoy = getFechaHoy();
   return repo.findByInstitucion(id_institucion, {
-    fecha_inicio: q.fecha_inicio||hoy, fecha_fin: q.fecha_fin||hoy,
-    nivel: q.nivel, grado: q.grado, seccion: q.seccion, estado: q.estado
+    fecha_inicio: q.fecha_inicio || hoy,
+    fecha_fin:    q.fecha_fin || hoy,
+    nivel:        q.nivel,
+    grado:        q.grado,
+    seccion:      q.seccion,
+    estado:       q.estado,
   });
 };
 
 const resumen = async (id_institucion, q) => {
   const hoy = getFechaHoy();
-  const rows = await repo.resumen(id_institucion, q.fecha_inicio||hoy, q.fecha_fin||hoy);
+  const rows = await repo.resumen(id_institucion, q.fecha_inicio || hoy, q.fecha_fin || hoy);
 
-  // Transformar array [{estado_asistencia, total}] al objeto plano que espera el frontend
   const mapa = { presentes: 0, tardanzas: 0, faltas: 0, justificados: 0 };
   let totalGeneral = 0;
   rows.forEach(r => {
     const n = parseInt(r.total, 10) || 0;
     totalGeneral += n;
     const estado = (r.estado_asistencia || '').toUpperCase();
-    if (estado === 'PRESENTE')     mapa.presentes    += n;
+    if (estado === 'PRESENTE')         mapa.presentes    += n;
     else if (estado === 'TARDANZA')    mapa.tardanzas    += n;
     else if (estado === 'FALTA')       mapa.faltas       += n;
     else if (estado === 'JUSTIFICADO') mapa.justificados += n;
   });
-  return { presentes: mapa.presentes, tardanzas: mapa.tardanzas, faltas: mapa.faltas, justificados: mapa.justificados, total: totalGeneral };
+  return {
+    presentes:    mapa.presentes,
+    tardanzas:    mapa.tardanzas,
+    faltas:       mapa.faltas,
+    justificados: mapa.justificados,
+    total:        totalGeneral,
+  };
 };
 
-module.exports = { registrarPorQR, registrarManual, registrarSalida, consultarPorEstudiante, consultarInstitucion, resumen };
+module.exports = { registrarPorQR, registrarManual, registrarSalida, cerrarDia, consultarPorEstudiante, consultarInstitucion, resumen, informeMensual };

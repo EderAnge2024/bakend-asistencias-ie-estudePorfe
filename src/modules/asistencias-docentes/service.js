@@ -200,4 +200,54 @@ async function resumen(usuario, query) {
   return { presentes: mapa.presentes, tardanzas: mapa.tardanzas, faltas: mapa.faltas, justificados: mapa.justificados, total: totalGeneral };
 }
 
-module.exports = { registrarEntrada, registrarSalida, consultarPropia, consultarPorDocente, consultarInstitucion, resumen };
+/**
+ * cerrarDia - Marca FALTA a todos los docentes activos sin registro ese dia.
+ * Solo ejecutable por DIRECTOR/ADMIN desde el panel.
+ * @param {object} usuario  - usuario autenticado con id_institucion
+ * @param {string} [fecha]  - YYYY-MM-DD; si no se pasa, usa la fecha de hoy
+ */
+async function cerrarDia(usuario, fecha) {
+  const { id_institucion } = usuario;
+  const fechaCierre = fecha || getFechaHoy();
+
+  const sinRegistro = await repo.findSinRegistroPorFecha(id_institucion, fechaCierre);
+
+  if (sinRegistro.length === 0) {
+    return {
+      marcados: 0,
+      detalles: [],
+      mensaje: 'Todos los docentes ya tienen asistencia registrada para esa fecha.',
+    };
+  }
+
+  const resultados = [];
+  for (const doc of sinRegistro) {
+    try {
+      await repo.registrarEntrada({
+        id_docente           : doc.id_docente,
+        id_institucion,
+        fecha                : fechaCierre,
+        hora_entrada         : null,
+        estado_asistencia    : 'FALTA',
+        metodo_entrada       : 'ADMINISTRATIVO',
+        latitud_entrada      : null,
+        longitud_entrada     : null,
+        distancia_entrada_metros: null,
+        wifi_ssid_entrada    : null,
+        wifi_bssid_entrada   : null,
+        ip_entrada           : null,
+        dispositivo          : null,
+        nivel_seguridad      : 'BAJO',
+        observaciones        : 'Marcado automático por cierre de día',
+      });
+      resultados.push({ id_docente: doc.id_docente, nombres: `${doc.nombres} ${doc.apellidos}`, estado: 'FALTA', ok: true });
+    } catch (e) {
+      resultados.push({ id_docente: doc.id_docente, nombres: `${doc.nombres} ${doc.apellidos}`, estado: 'ERROR', ok: false, error: e.message });
+    }
+  }
+
+  const marcados = resultados.filter(r => r.ok).length;
+  return { marcados, detalles: resultados, mensaje: `Se marcaron ${marcados} falta(s) de docentes por cierre de día.` };
+}
+
+module.exports = { registrarEntrada, registrarSalida, consultarPropia, consultarPorDocente, consultarInstitucion, resumen, cerrarDia };

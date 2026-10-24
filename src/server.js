@@ -10,6 +10,7 @@
 const env              = require('./config/env');
 const app              = require('./app');
 const { initDatabase } = require('./database/databaseHealth');
+const { iniciarCron }  = require('./config/cronCierreDia');
 
 async function startServer() {
   await initDatabase();
@@ -17,6 +18,8 @@ async function startServer() {
   app.listen(PORT, () => {
     console.log(`[Server] Sistema de Asistencias IE en puerto ${PORT}`);
     console.log(`[Server] Health: http://localhost:${PORT}/health`);
+    // Iniciar cierre automático diario a las 00:00 (Lima)
+    iniciarCron();
   });
 }
 

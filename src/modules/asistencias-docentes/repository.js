@@ -144,6 +144,36 @@ const resumenPorInstitucion = async (id_institucion, fecha_inicio, fecha_fin) =>
   return rows;
 };
 
+/**
+ * Devuelve los docentes activos de la institución que NO tienen
+ * asistencia registrada en la fecha indicada.
+ * Consulta la lista de docentes en dbMonitoreo (sistema principal).
+ */
+const findSinRegistroPorFecha = async (id_institucion, fecha) => {
+  // Obtener docentes que SÍ tienen registro ese día
+  const { rows: conRegistro } = await db.query(
+    `SELECT DISTINCT id_docente FROM asistencias_docentes
+     WHERE (id_institucion=$1 OR id_institucion::text=$1::text) AND fecha=$2`,
+    [id_institucion, fecha]
+  );
+  const idsConRegistro = conRegistro.map(r => Number(r.id_docente));
+
+  // Buscar todos los docentes activos en dbMonitoreo y filtrar los que no tienen registro
+  if (!dbMonitoreo) return [];
+  try {
+    const { rows: todosDocentes } = await dbMonitoreo.query(
+      `SELECT d.id_docente, d.nombres, d.apellidos, d.dni
+       FROM docentes d
+       WHERE d.id_institucion = $1 AND d.estado = true`,
+      [id_institucion]
+    );
+    return todosDocentes.filter(d => !idsConRegistro.includes(Number(d.id_docente)));
+  } catch (e) {
+    console.warn('[CerrarDia Docentes] dbMonitoreo no disponible:', e.message);
+    return [];
+  }
+};
+
 module.exports = {
   findByDocenteYFecha,
   registrarEntrada,
@@ -151,5 +181,6 @@ module.exports = {
   findPropia,
   findByDocente,
   findByInstitucion,
-  resumenPorInstitucion
+  resumenPorInstitucion,
+  findSinRegistroPorFecha,
 };

@@ -7,5 +7,6 @@ const mia               = async (req,res,next) => { try { ok(res, await svc.cons
 const porDocente        = async (req,res,next) => { try { ok(res, await svc.consultarPorDocente(req.user, req.params.id_docente, req.query)); } catch(e){next(e);} };
 const porInstitucion    = async (req,res,next) => { try { ok(res, await svc.consultarInstitucion(req.user, req.query)); } catch(e){next(e);} };
 const resumen           = async (req,res,next) => { try { ok(res, await svc.resumen(req.user, req.query), 'Resumen de asistencias.'); } catch(e){next(e);} };
+const cerrarDia         = async (req,res,next) => { try { ok(res, await svc.cerrarDia(req.user, req.body?.fecha), 'Cierre de día de docentes completado.'); } catch(e){next(e);} };
 
-module.exports = { entrada, salida, mia, porDocente, porInstitucion, resumen };
+module.exports = { entrada, salida, mia, porDocente, porInstitucion, resumen, cerrarDia };
