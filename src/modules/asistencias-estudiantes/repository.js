@@ -63,7 +63,7 @@ const findSinRegistroPorFecha = async (id_institucion, fecha) => {
     FROM matriculas m
     JOIN estudiantes e ON m.id_estudiante = e.id_estudiante
     WHERE m.id_institucion = $1
-      AND m.estado_matricula = 'ACTIVA'
+      AND (m.estado = 'ACTIVO' OR m.estado = 'ACTIVA')
       AND m.id_estudiante NOT IN (
         SELECT ae.id_estudiante
         FROM asistencias_estudiantes ae
@@ -113,7 +113,7 @@ const findInformeMensual = async (id_institucion, mes, anio, filtros = {}) => {
     FROM matriculas m
     JOIN estudiantes e ON m.id_estudiante = e.id_estudiante
     WHERE m.id_institucion = $1
-      AND m.estado_matricula = 'ACTIVA'
+      AND (m.estado = 'ACTIVO' OR m.estado = 'ACTIVA')
       ${whereExtra}
     ORDER BY m.nivel, m.grado, m.seccion, e.apellido_paterno, e.apellido_materno, e.nombres
   `;
