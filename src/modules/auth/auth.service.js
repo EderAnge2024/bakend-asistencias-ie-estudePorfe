@@ -5,14 +5,22 @@ const { JWT_SECRET } = require('../../config/security');
 const AppError = require('../../shared/errors/AppError');
 
 function parseGradoTutoria(gradoTutoria, fallbackGrado, fallbackSeccion) {
-  if (!gradoTutoria) return { grado: fallbackGrado, seccion: fallbackSeccion };
+  if (!gradoTutoria) {
+    const s = fallbackSeccion ? String(fallbackSeccion).trim().toUpperCase() : 'A';
+    return { grado: fallbackGrado, seccion: (s === 'UNICA' || s === 'ÚNICA') ? 'A' : s };
+  }
   const str = String(gradoTutoria).trim();
   const matchNum = str.match(/\d+/);
-  // Extraer letra de sección: busca letra entre comillas al final o la primera letra
-  const matchLetra = str.match(/["']([A-Za-z])["']/) || str.match(/\b([A-Za-z])\b/) || str.match(/([A-Za-z])/);
+  // Extraer letra de sección: busca letra entre comillas (ej. 2 "A") o letra individual
+  const matchLetra = str.match(/["']([A-Za-z])["']/) || str.match(/\b([A-Za-z])\b/);
+  let sec = matchLetra ? matchLetra[1].toUpperCase() : null;
+  if (!sec) {
+    const s = fallbackSeccion ? String(fallbackSeccion).trim().toUpperCase() : 'A';
+    sec = (s === 'UNICA' || s === 'ÚNICA') ? 'A' : s;
+  }
   return {
     grado: matchNum ? matchNum[0] : fallbackGrado,
-    seccion: matchLetra ? matchLetra[1].toUpperCase() : fallbackSeccion
+    seccion: sec
   };
 }
 
@@ -51,11 +59,22 @@ const login = async (dni, password) => {
     throw new AppError('Contraseña incorrecta.', 'INVALID_PASSWORD', 401);
   }
 
+  // Determinar si es tutor (soporta boolean, string 'true', 'SI', 't', 1 o si tiene grado_tutoria asignado)
+  const isTutor = Boolean(
+    user.tutor === true ||
+    String(user.tutor).toLowerCase() === 'true' ||
+    String(user.tutor).toLowerCase() === 'si' ||
+    String(user.tutor).toLowerCase() === 't' ||
+    user.tutor === 1 ||
+    user.tutor === '1' ||
+    !!user.grado_tutoria
+  );
+
   // Determinar grado y sección reales de tutoría (ej. grado_tutoria = '2 "B"' -> grado: '2', seccion: 'B')
   let gradoFinal = user.grado || null;
   let seccionFinal = user.seccion || null;
 
-  if (user.tutor && user.grado_tutoria) {
+  if (user.grado_tutoria) {
     const parsed = parseGradoTutoria(user.grado_tutoria, user.grado, user.seccion);
     gradoFinal = parsed.grado;
     seccionFinal = parsed.seccion;
@@ -76,7 +95,7 @@ const login = async (dni, password) => {
       nivel: user.nivel || null,
       grado: gradoFinal,
       seccion: seccionFinal,
-      tutor: user.tutor || false,
+      tutor: isTutor,
       grado_tutoria: user.grado_tutoria || null
     },
     JWT_SECRET,
@@ -97,7 +116,7 @@ const login = async (dni, password) => {
       nivel: user.nivel || null,
       grado: gradoFinal,
       seccion: seccionFinal,
-      tutor: user.tutor || false,
+      tutor: isTutor,
       grado_tutoria: user.grado_tutoria || null
     }
   };

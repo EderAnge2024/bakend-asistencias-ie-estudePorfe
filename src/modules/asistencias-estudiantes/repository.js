@@ -102,9 +102,31 @@ const findInformeMensual = async (id_institucion, mes, anio, filtros = {}) => {
   let whereExtra = '';
   const valsEst = [id_institucion];
   let i = 2;
-  if (filtros.nivel)   { whereExtra += ` AND LOWER(TRIM(m.nivel)) = LOWER(TRIM($${i++}))`;   valsEst.push(filtros.nivel); }
-  if (filtros.grado)   { whereExtra += ` AND REGEXP_REPLACE(m.grado, '[^0-9]', '', 'g') = REGEXP_REPLACE($${i++}, '[^0-9]', '', 'g')`; valsEst.push(filtros.grado); }
-  if (filtros.seccion) { whereExtra += ` AND UPPER(TRIM(m.seccion)) = UPPER(TRIM($${i++}))`;  valsEst.push(filtros.seccion); }
+  if (filtros.nivel && String(filtros.nivel).trim() !== '' && String(filtros.nivel).toUpperCase() !== 'NIVEL') {
+    whereExtra += ` AND LOWER(TRIM(m.nivel)) = LOWER(TRIM($${i++}))`;
+    valsEst.push(String(filtros.nivel).trim());
+  }
+
+  if (filtros.grado && String(filtros.grado).trim() !== '') {
+    const gradoStr = String(filtros.grado).trim();
+    const soloNum = gradoStr.replace(/[^0-9]/g, '');
+    if (soloNum && soloNum.length <= 2) {
+      whereExtra += ` AND REGEXP_REPLACE(m.grado, '[^0-9]', '', 'g') = $${i++}`;
+      valsEst.push(soloNum);
+    } else if (!gradoStr.includes('-')) {
+      whereExtra += ` AND (REGEXP_REPLACE(m.grado, '[^0-9]', '', 'g') = REGEXP_REPLACE($${i}, '[^0-9]', '', 'g') OR m.grado ILIKE '%' || $${i} || '%')`;
+      valsEst.push(gradoStr);
+      i++;
+    }
+  }
+
+  if (filtros.seccion && String(filtros.seccion).trim() !== '') {
+    const secStr = String(filtros.seccion).trim().toUpperCase();
+    if (secStr !== 'UNICA' && secStr !== 'ÚNICA' && secStr !== 'TODAS' && secStr !== 'TODOS' && secStr !== 'TODOS/AS') {
+      whereExtra += ` AND UPPER(TRIM(m.seccion)) = UPPER(TRIM($${i++}))`;
+      valsEst.push(secStr);
+    }
+  }
 
   // Todos los estudiantes matriculados en la institución
   const qEst = `
