@@ -148,7 +148,9 @@ const findInformeMensual = async (id_institucion, mes, anio, filtros = {}) => {
   const { rows: asistencias } = await db.query(`
     SELECT ae.id_estudiante,
            EXTRACT(DAY FROM ae.fecha)::int AS dia,
-           ae.estado_asistencia
+           ae.estado_asistencia,
+           ae.hora_entrada,
+           ae.hora_salida
     FROM asistencias_estudiantes ae
     JOIN matriculas m ON ae.id_matricula = m.id_matricula
     WHERE m.id_institucion = $1
@@ -157,16 +159,27 @@ const findInformeMensual = async (id_institucion, mes, anio, filtros = {}) => {
   `, [id_institucion, fechaInicio, fechaFin, idsEst]);
 
   // Mapa: id_estudiante → { dia → inicial }
+  // Mapa detalle: id_estudiante → { dia → { estado, hora_entrada, hora_salida, completa } }
   const INICIAL = { PRESENTE: 'P', TARDANZA: 'T', FALTA: 'F', JUSTIFICADO: 'J' };
   const mapa = {};
+  const mapaDetalle = {};
   asistencias.forEach(a => {
     if (!mapa[a.id_estudiante]) mapa[a.id_estudiante] = {};
+    if (!mapaDetalle[a.id_estudiante]) mapaDetalle[a.id_estudiante] = {};
     mapa[a.id_estudiante][a.dia] = INICIAL[a.estado_asistencia] || a.estado_asistencia[0];
+    mapaDetalle[a.id_estudiante][a.dia] = {
+      estado: a.estado_asistencia,
+      hora_entrada: a.hora_entrada,
+      hora_salida: a.hora_salida,
+      completa: Boolean(a.hora_entrada && a.hora_salida),
+    };
   });
 
   return estudiantes.map(e => ({
     ...e,
     dias: mapa[e.id_estudiante] || {},
+    dias_detalle: mapaDetalle[e.id_estudiante] || {},
+    total_completas: Object.values(mapaDetalle[e.id_estudiante] || {}).filter(d => d.completa).length,
   }));
 };
 

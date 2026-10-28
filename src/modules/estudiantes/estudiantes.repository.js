@@ -57,7 +57,8 @@ const findMisEstudiantes = async (id_institucion, nivel, grado, seccion) => {
   const query = `
     SELECT e.*, m.id_matricula, m.nivel, m.grado, m.seccion,
            ae.estado_asistencia AS _asistencia_hoy,
-           ae.hora_entrada      AS _hora_entrada_hoy
+           ae.hora_entrada      AS _hora_entrada_hoy,
+           ae.hora_salida       AS _hora_salida_hoy
     FROM estudiantes e
     JOIN matriculas m ON e.id_estudiante = m.id_estudiante
     LEFT JOIN asistencias_estudiantes ae

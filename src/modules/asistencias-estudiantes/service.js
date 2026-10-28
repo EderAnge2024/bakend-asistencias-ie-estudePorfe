@@ -42,6 +42,7 @@ function evaluarEstadoEstudiante(horaInicio, toleranciaMin) {
 
 async function registrarPorQR(usuario, body) {
   const { token_qr, latitud, longitud, dispositivo, observaciones } = body;
+  const modo = (body.modo || '').toUpperCase(); // 'INGRESO' | 'SALIDA' | ''
   const ip = body.ip || null;
   const { id_institucion } = usuario;
 
@@ -79,7 +80,66 @@ async function registrarPorQR(usuario, body) {
   // 8. Verificar si ya existe asistencia hoy
   const fecha = getFechaHoy();
   const existente = await repo.findByEstudianteYFecha(id_estudiante, fecha);
-  if (existente) throw new AppError('El estudiante ya tiene asistencia registrada hoy.','DUPLICATE_ATTENDANCE',409);
+
+  // MODO EXPLICITO 'INGRESO': Solo registrar ingreso; rechazar si ya ingresó
+  if (modo === 'INGRESO') {
+    if (existente) {
+      const horaEnt = existente.hora_entrada
+        ? new Date(existente.hora_entrada).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })
+        : '--:--';
+      throw new AppError(
+        `El estudiante ya tiene ingreso registrado hoy a las ${horaEnt}. Cambie al botón "Modo Salida" si desea registrar su salida.`,
+        'ALREADY_ENTERED',
+        409
+      );
+    }
+  } else if (modo === 'SALIDA') {
+    // MODO EXPLICITO 'SALIDA': Solo registrar salida; requiere ingreso previo
+    if (!existente) {
+      throw new AppError(
+        'No se puede registrar salida: el estudiante no registra ingreso el día de hoy.',
+        'NO_ENTRY_RECORDED',
+        400
+      );
+    }
+    if (existente.hora_salida) {
+      const horaSal = new Date(existente.hora_salida).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
+      throw new AppError(
+        `El estudiante ya tiene salida registrada hoy a las ${horaSal}.`,
+        'ALREADY_EXITED',
+        409
+      );
+    }
+    const actualizado = await repo.registrarSalida(existente.id_asistencia, getAhora());
+    return {
+      ...actualizado,
+      _accion: 'SALIDA',
+      nombres: cred.nombres,
+      apellido_paterno: cred.apellido_paterno,
+    };
+  } else {
+    // MODO AUTOMATICO (retrocompatible): 1.° escaneo ingreso, 2.° escaneo salida
+    if (existente) {
+      if (!existente.hora_salida) {
+        const actualizado = await repo.registrarSalida(existente.id_asistencia, getAhora());
+        return {
+          ...actualizado,
+          _accion: 'SALIDA',
+          nombres: cred.nombres,
+          apellido_paterno: cred.apellido_paterno,
+        };
+      }
+      throw new AppError(
+        `Jornada completa registrada. Ingreso: ${
+          existente.hora_entrada ? new Date(existente.hora_entrada).toLocaleTimeString('es-PE',{hour:'2-digit',minute:'2-digit'}) : '--'
+        }, Salida: ${
+          new Date(existente.hora_salida).toLocaleTimeString('es-PE',{hour:'2-digit',minute:'2-digit'})
+        }`,
+        'ATTENDANCE_COMPLETE',
+        409
+      );
+    }
+  }
 
   // 9. Determinar estado PRESENTE / TARDANZA usando horario del dia
   const diaSemana = obtenerDiaSemana();
@@ -100,7 +160,7 @@ async function registrarPorQR(usuario, body) {
   }
 
   // 10. Registrar asistencia con estado calculado (PRESENTE o TARDANZA)
-  return repo.registrar({
+  const nuevo = await repo.registrar({
     id_estudiante, id_matricula: matricula.id_matricula, fecha,
     hora_entrada        : getAhora(),
     estado_asistencia   : estadoAsistencia,
@@ -111,12 +171,25 @@ async function registrarPorQR(usuario, body) {
     ip, dispositivo: dispositivo||null,
     observaciones: observaciones||null,
   });
+
+  return {
+    ...nuevo,
+    _accion: 'INGRESO',
+    nombres: cred.nombres,
+    apellido_paterno: cred.apellido_paterno,
+  };
 }
 
 async function registrarManual(usuario, body) {
   const { id_institucion } = usuario;
   const { id_estudiante, estado_asistencia, observaciones } = body;
+  const modo = (body.modo || '').toUpperCase();
   if (!id_estudiante) throw new AppError('id_estudiante es obligatorio.','MISSING_FIELDS');
+
+  // Si se solicita explícitamente registrar salida manual
+  if (modo === 'SALIDA') {
+    return registrarSalida(usuario, id_estudiante);
+  }
 
   const matricula = await matRepo.findActivaByEstudiante(id_estudiante, id_institucion);
   if (!matricula) throw new AppError('El estudiante no tiene matricula activa.','NO_ACTIVE_MATRICULA',404);
