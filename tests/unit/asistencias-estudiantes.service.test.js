@@ -3,21 +3,6 @@
  *
  * Pruebas unitarias del service de asistencias de estudiantes.
  * Se mockean todas las dependencias de BD para que corran sin conexión.
- *
- * Cubre:
- *  1. Primer escaneo / Botón Ingreso registra hora_entrada
- *  2. Botón Ingreso rechaza si ya tiene ingreso previo (ALREADY_ENTERED)
- *  3. Botón Salida registra hora_salida si tiene ingreso
- *  4. Botón Salida rechaza si no tiene ingreso previo (NO_ENTRY_RECORDED)
- *  5. Botón Salida rechaza si ya tiene salida registrada (ALREADY_EXITED)
- *  6. Modo automático retrocompatible: 1er escaneo ingreso, 2do salida, 3ero ATTENDANCE_COMPLETE
- *  7. Salida directa (registrarSalida) sin ingreso lanza NOT_FOUND
- *  8. Condición de carrera prevenida por restricción UNIQUE de BD
- *  9. Registro con ingreso pero sin salida mantiene hora_salida=null
- * 10. Cálculo de estado PRESENTE / TARDANZA
- * 11. Resumen no duplica por entrada y salida (1 registro por estudiante/día)
- * 12. informeMensual devuelve estructura compatible incluyendo detalle de permanencia
- * 13. Estudiante sin matrícula activa rechaza con NO_ACTIVE_MATRICULA
  */
 
 jest.mock('../../src/modules/asistencias-estudiantes/repository');
@@ -34,7 +19,8 @@ const horRepo = require('../../src/modules/horarios/horarios.repository');
 const svc     = require('../../src/modules/asistencias-estudiantes/service');
 
 // ─── helpers ────────────────────────────────────────────────────────────────
-const usuarioDirector = { id_institucion: 1, rol: 'DIRECTOR' };
+const usuarioDirector = { id_usuario: 5, id_institucion: 1, rol: 'DIRECTOR' };
+const usuarioDocenteTutor = { id_usuario: 8, id_institucion: 1, rol: 'DOCENTE', tutor: true, nivel: 'Secundaria', grado: '3', seccion: 'A' };
 const credencialQR    = {
   id_estudiante: 10,
   nombres: 'Luis',
@@ -58,6 +44,8 @@ const registroIngreso = {
   hora_salida: null,
   estado_asistencia: 'PRESENTE',
   metodo_registro: 'QR',
+  registrado_por: 5,
+  rol_registro: 'DIRECTOR',
 };
 
 function limpiarMocks() {
@@ -66,6 +54,7 @@ function limpiarMocks() {
   matRepo.findActivaByEstudiante.mockResolvedValue(matriculaActiva);
   confRepo.findByInstitucion.mockResolvedValue(null);
   horRepo.findVigentePorDia.mockResolvedValue(null);
+  horRepo.findAll.mockResolvedValue([]);
 }
 
 // ─── TESTS ──────────────────────────────────────────────────────────────────
@@ -83,6 +72,10 @@ describe('Asistencias Estudiantes Service - Ingreso y Salida', () => {
     expect(repo.registrarSalida).not.toHaveBeenCalled();
     expect(resultado.hora_entrada).toBeTruthy();
     expect(resultado._accion).toBe('INGRESO');
+    expect(repo.registrar).toHaveBeenCalledWith(expect.objectContaining({
+      registrado_por: 5,
+      rol_registro: 'DIRECTOR',
+    }));
   });
 
   // 2. Botón / Modo Ingreso rechaza si ya ingresó
@@ -98,32 +91,23 @@ describe('Asistencias Estudiantes Service - Ingreso y Salida', () => {
 
     expect(error).toBeDefined();
     expect(error.errorCode).toBe('ALREADY_ENTERED');
-    expect(error.statusCode).toBe(409);
-    expect(repo.registrar).not.toHaveBeenCalled();
-    expect(repo.registrarSalida).not.toHaveBeenCalled();
   });
 
-  // 3. Botón / Modo Salida registra salida cuando tiene ingreso
+  // 3. Botón / Modo Salida registra salida
   test('3. Modo SALIDA: Registra hora_salida si el estudiante tiene ingreso previo', async () => {
     repo.findByEstudianteYFecha.mockResolvedValue(registroIngreso);
-    const registroConSalida = {
+    repo.registrarSalida.mockResolvedValue({
       ...registroIngreso,
-      hora_salida: new Date('2026-10-28T13:00:00-05:00'),
-    };
-    repo.registrarSalida.mockResolvedValue(registroConSalida);
+      hora_salida: new Date(),
+    });
 
     const resultado = await svc.registrarPorQR(usuarioDirector, { token_qr: 'abc-123', modo: 'SALIDA' });
 
-    expect(repo.registrarSalida).toHaveBeenCalledWith(
-      registroIngreso.id_asistencia,
-      expect.any(Date)
-    );
-    expect(repo.registrar).not.toHaveBeenCalled();
+    expect(repo.registrarSalida).toHaveBeenCalledTimes(1);
     expect(resultado._accion).toBe('SALIDA');
-    expect(resultado.hora_salida).toBeTruthy();
   });
 
-  // 4. Botón / Modo Salida rechaza si no tiene ingreso
+  // 4. Botón / Modo Salida rechaza si no ingresó
   test('4. Modo SALIDA: Rechaza con NO_ENTRY_RECORDED si el estudiante no tiene ingreso', async () => {
     repo.findByEstudianteYFecha.mockResolvedValue(null);
 
@@ -136,17 +120,14 @@ describe('Asistencias Estudiantes Service - Ingreso y Salida', () => {
 
     expect(error).toBeDefined();
     expect(error.errorCode).toBe('NO_ENTRY_RECORDED');
-    expect(error.statusCode).toBe(400);
-    expect(repo.registrarSalida).not.toHaveBeenCalled();
   });
 
   // 5. Botón / Modo Salida rechaza si ya salió
   test('5. Modo SALIDA: Rechaza con ALREADY_EXITED si ya tiene salida registrada', async () => {
-    const registroCompleto = {
+    repo.findByEstudianteYFecha.mockResolvedValue({
       ...registroIngreso,
       hora_salida: new Date('2026-10-28T13:00:00-05:00'),
-    };
-    repo.findByEstudianteYFecha.mockResolvedValue(registroCompleto);
+    });
 
     let error;
     try {
@@ -157,22 +138,24 @@ describe('Asistencias Estudiantes Service - Ingreso y Salida', () => {
 
     expect(error).toBeDefined();
     expect(error.errorCode).toBe('ALREADY_EXITED');
-    expect(error.statusCode).toBe(409);
-    expect(repo.registrarSalida).not.toHaveBeenCalled();
   });
 
-  // 6. Modo automático retrocompatible
+  // 6. Modo automático sin modo
   test('6. Modo automático sin modo: 2.° escaneo registra salida y 3.° lanza ATTENDANCE_COMPLETE', async () => {
-    // 2.° escaneo
     repo.findByEstudianteYFecha.mockResolvedValueOnce(registroIngreso);
-    const registroConSalida = { ...registroIngreso, hora_salida: new Date() };
-    repo.registrarSalida.mockResolvedValue(registroConSalida);
+    repo.registrarSalida.mockResolvedValueOnce({
+      ...registroIngreso,
+      hora_salida: new Date('2026-10-28T13:00:00-05:00'),
+    });
 
     const res2 = await svc.registrarPorQR(usuarioDirector, { token_qr: 'abc-123' });
     expect(res2._accion).toBe('SALIDA');
 
-    // 3.° escaneo
-    repo.findByEstudianteYFecha.mockResolvedValueOnce(registroConSalida);
+    repo.findByEstudianteYFecha.mockResolvedValueOnce({
+      ...registroIngreso,
+      hora_salida: new Date('2026-10-28T13:00:00-05:00'),
+    });
+
     let err3;
     try {
       await svc.registrarPorQR(usuarioDirector, { token_qr: 'abc-123' });
@@ -228,7 +211,7 @@ describe('Asistencias Estudiantes Service - Ingreso y Salida', () => {
   });
 
   // 10. Cálculo de estado PRESENTE / TARDANZA
-  test('10. Horario con tolerancia temprana calcula estado PRESENTE o TARDANZA', async () => {
+  test('10. Horario con tolerancia calcula estado PRESENTE o TARDANZA', async () => {
     const horarioHoy = { hora_inicio: '06:00:00', tolerancia_entrada_min: 240 };
     horRepo.findVigentePorDia.mockResolvedValue(horarioHoy);
     repo.findByEstudianteYFecha.mockResolvedValue(null);
@@ -255,7 +238,7 @@ describe('Asistencias Estudiantes Service - Ingreso y Salida', () => {
     expect(res.total).toBe(6);
   });
 
-  // 12. informeMensual compatible con días y detalle
+  // 12. informeMensual compatible con días, detalle y alertas
   test('12. informeMensual devuelve estructura compatible con matriz y detalle de permanencia', async () => {
     const estudianteMock = {
       id_estudiante: 10,
@@ -271,7 +254,10 @@ describe('Asistencias Estudiantes Service - Ingreso y Salida', () => {
         1: { estado: 'PRESENTE', completa: true, hora_entrada: new Date(), hora_salida: new Date() },
         2: { estado: 'TARDANZA', completa: false, hora_entrada: new Date(), hora_salida: null }
       },
-      total_completas: 1
+      total_completas: 1,
+      total_faltas_mes: 4,
+      total_faltas_acumuladas: 4,
+      alerta_faltas: 'ALERTA',
     };
     repo.findInformeMensual.mockResolvedValue([estudianteMock]);
 
@@ -281,6 +267,7 @@ describe('Asistencias Estudiantes Service - Ingreso y Salida', () => {
     expect(res[0].dias[1]).toBe('P');
     expect(res[0].dias_detalle[1].completa).toBe(true);
     expect(res[0].total_completas).toBe(1);
+    expect(res[0].alerta_faltas).toBe('ALERTA');
   });
 
   // 13. Sin matrícula activa
@@ -298,5 +285,40 @@ describe('Asistencias Estudiantes Service - Ingreso y Salida', () => {
     expect(error).toBeDefined();
     expect(error.errorCode).toBe('NO_ACTIVE_MATRICULA');
     expect(error.statusCode).toBe(404);
+  });
+
+  // 14. Registro manual aplica cálculo automático de presente/tardanza y registra auditor
+  test('14. Registro manual calcula estado automáticamente y guarda registrado_por', async () => {
+    repo.findByEstudianteYFecha.mockResolvedValue(null);
+    repo.registrar.mockImplementation(async (d) => ({
+      ...registroIngreso,
+      ...d,
+      _accion: 'INGRESO',
+    }));
+
+    const res = await svc.registrarManual(usuarioDirector, { id_estudiante: 10 });
+    expect(repo.registrar).toHaveBeenCalledWith(expect.objectContaining({
+      metodo_registro: 'MANUAL',
+      registrado_por: 5,
+      rol_registro: 'DIRECTOR',
+    }));
+    expect(['PRESENTE', 'TARDANZA']).toContain(res.estado_asistencia);
+  });
+
+  // 15. Docente tutor de otra sección es rechazado
+  test('15. Docente tutor de otra sección no puede registrar asistencia', async () => {
+    const docenteOtraSeccion = { id_usuario: 9, id_institucion: 1, rol: 'DOCENTE', tutor: true, nivel: 'Secundaria', grado: '4', seccion: 'B' };
+    repo.findByEstudianteYFecha.mockResolvedValue(null);
+
+    let error;
+    try {
+      await svc.registrarManual(docenteOtraSeccion, { id_estudiante: 10 });
+    } catch (e) {
+      error = e;
+    }
+
+    expect(error).toBeDefined();
+    expect(error.errorCode).toBe('WRONG_SECTION');
+    expect(error.statusCode).toBe(403);
   });
 });

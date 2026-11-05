@@ -15,6 +15,7 @@ router.post('/salida/:id_estudiante',            autenticar, ADMIN,      ctrl.sa
 router.post('/:id_estudiante/salida',            autenticar, ADMIN,      ctrl.salida);
 router.post('/cerrar-dia',                       autenticar, SOLO_ADMIN, ctrl.cerrarDia);
 
+router.get('/buscar',                            autenticar, SOLO_ADMIN, ctrl.buscarParaDirector);
 router.get('/informe-mensual',                   autenticar, ADMIN,      ctrl.informeMensual);
 router.get('/estudiante/:id_estudiante',         autenticar, ADMIN,      ctrl.porEstudiante);
 router.get('/institucion',                       autenticar, ADMIN,      ctrl.porInstitucion);

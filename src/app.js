@@ -4,14 +4,68 @@
  */
 const express      = require('express');
 const cors         = require('cors');
+const helmet       = require('helmet');
+const rateLimit    = require('express-rate-limit');
 const errorHandler = require('./shared/middleware/errorHandler');
 
 const app = express();
 
 // -------------------------------------------------------
+// CORS – Whitelist explícita (APK Capacitor + desarrollo)
+// Peticiones sin Origin (nativas Android, health checks de Render) → permitidas
+// -------------------------------------------------------
+const origenesPermitidos = [
+  'http://localhost',           // APK Capacitor (Android WebView)
+  'capacitor://localhost',      // APK Capacitor (iOS / Android alt)
+  'http://localhost:5173',      // Vite dev frontend
+  'http://localhost:3000',      // Dev local alternativo
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:3000',
+];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Sin origin → petición nativa (APK sin WebView, Render health check) → OK
+    if (!origin) return callback(null, true);
+    if (origenesPermitidos.includes(origin)) return callback(null, true);
+    // Bloquear cualquier otro origen desconocido
+    return callback(new Error(`Origen no autorizado: ${origin}`));
+  },
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: false,   // No se usan cookies; JWT va en header
+}));
+
+// -------------------------------------------------------
+// Helmet – Cabeceras de seguridad HTTP
+// CSP desactivado (API REST, sin HTML propio)
+// crossOriginResourcePolicy abierto para Capacitor WebView
+// -------------------------------------------------------
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
+
+// -------------------------------------------------------
+// Rate Limit – SOLO para login (protección contra fuerza bruta)
+// 10 intentos por IP cada 15 minutos; NO afecta QR ni otras rutas
+// -------------------------------------------------------
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,  // 15 minutos
+  max: 10,                    // Máximo 10 intentos por IP
+  standardHeaders: true,      // Incluye RateLimit-* headers estándar
+  legacyHeaders: false,
+  skipSuccessfulRequests: true, // No contar logins exitosos
+  message: {
+    success: false,
+    error: 'TOO_MANY_REQUESTS',
+    message: 'Demasiados intentos de inicio de sesión. Espera 15 minutos e intenta nuevamente.',
+  },
+});
+
+// -------------------------------------------------------
 // Middlewares globales
 // -------------------------------------------------------
-app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -40,7 +94,7 @@ app.get('/', (_req, res) => {
 // -------------------------------------------------------
 const BASE = '/api/v1';
 
-app.use(`${BASE}/auth`,                    require('./modules/auth/auth.routes'));
+app.use(`${BASE}/auth`,                    loginLimiter, require('./modules/auth/auth.routes'));
 app.use(`${BASE}/configuracion`,           require('./modules/configuracion/configuracion.routes'));
 app.use(`${BASE}/horarios`,                require('./modules/horarios/horarios.routes'));
 app.use(`${BASE}/eventos`,                 require('./modules/eventos/eventos.routes'));
