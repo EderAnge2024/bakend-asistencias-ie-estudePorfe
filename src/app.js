@@ -15,12 +15,17 @@ const app = express();
 // Peticiones sin Origin (nativas Android, health checks de Render) → permitidas
 // -------------------------------------------------------
 const origenesPermitidos = [
-  'http://localhost',           // APK Capacitor (Android WebView)
+  'http://localhost',           // APK Capacitor Android (HTTP)
+  'https://localhost',          // APK Capacitor Android (HTTPS - WebView moderno)
   'capacitor://localhost',      // APK Capacitor (iOS / Android alt)
   'http://localhost:5173',      // Vite dev frontend
+  'https://localhost:5173',
   'http://localhost:3000',      // Dev local alternativo
+  'https://localhost:3000',
   'http://127.0.0.1:5173',
+  'https://127.0.0.1:5173',
   'http://127.0.0.1:3000',
+  'https://127.0.0.1:3000',
 ];
 
 app.use(cors({
