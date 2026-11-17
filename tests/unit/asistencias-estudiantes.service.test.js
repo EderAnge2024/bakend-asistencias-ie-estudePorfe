@@ -224,6 +224,23 @@ describe('Asistencias Estudiantes Service - Ingreso y Salida', () => {
     expect(['PRESENTE', 'TARDANZA']).toContain(resultado.estado_asistencia);
   });
 
+  test('10b. Toma la tolerancia de la sección de Configuración Institucional para estudiantes', async () => {
+    const horarioHoy = { hora_inicio: '08:00:00', tolerancia_entrada_min: 10 };
+    horRepo.findVigentePorDia.mockResolvedValue(horarioHoy);
+    // Simular que el Director configuró 25 minutos de tolerancia
+    confRepo.findByInstitucion.mockResolvedValue({ tolerancia_entrada_min: 25 });
+
+    // Hora de prueba: 08:20 (pasa los 10 min de horario, pero entra en los 25 min de Configuración)
+    const fechaPruebaPresente = new Date('2026-10-28T08:20:00-05:00');
+    const estadoConToleranciaConfig = await svc.determinarEstadoEntrada(1, fechaPruebaPresente);
+    expect(estadoConToleranciaConfig).toBe('PRESENTE');
+
+    // Hora de prueba: 08:30 (supera los 25 min)
+    const fechaPruebaTardanza = new Date('2026-10-28T08:30:00-05:00');
+    const estadoSuperado = await svc.determinarEstadoEntrada(1, fechaPruebaTardanza);
+    expect(estadoSuperado).toBe('TARDANZA');
+  });
+
   // 11. Resumen no duplica por ingreso + salida
   test('11. resumen() cuenta 1 vez por estudiante (sin duplicar por entrada y salida)', async () => {
     repo.resumen.mockResolvedValue([
@@ -320,5 +337,33 @@ describe('Asistencias Estudiantes Service - Ingreso y Salida', () => {
     expect(error).toBeDefined();
     expect(error.errorCode).toBe('WRONG_SECTION');
     expect(error.statusCode).toBe(403);
+  });
+
+  // 16. Actualizar o corregir asistencia por error (cambiar a FALTA o JUSTIFICADO)
+  test('16. actualizarAsistencia permite corregir estado si se registró por equivocación', async () => {
+    repo.findById.mockResolvedValue(registroIngreso);
+    repo.actualizar.mockImplementation(async (id, d) => ({
+      ...registroIngreso,
+      ...d,
+    }));
+
+    const res = await svc.actualizarAsistencia(usuarioDirector, 99, {
+      estado_asistencia: 'FALTA',
+      observaciones: 'Corrección: el alumno no vino hoy',
+    });
+
+    expect(repo.actualizar).toHaveBeenCalledTimes(1);
+    expect(res.estado_asistencia).toBe('FALTA');
+    expect(res.hora_entrada).toBeNull();
+  });
+
+  // 17. Eliminar asistencia registrada por error
+  test('17. eliminarAsistencia elimina el registro para dejar al estudiante sin asistencia', async () => {
+    repo.findById.mockResolvedValue(registroIngreso);
+    repo.eliminar.mockResolvedValue(registroIngreso);
+
+    const res = await svc.eliminarAsistencia(usuarioDirector, 99);
+    expect(repo.eliminar).toHaveBeenCalledWith(99);
+    expect(res.ok).toBe(true);
   });
 });

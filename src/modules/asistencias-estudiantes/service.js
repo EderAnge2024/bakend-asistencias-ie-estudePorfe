@@ -38,15 +38,13 @@ async function determinarEstadoEntrada(id_institucion, fechaRef = new Date()) {
     }
   }
 
-  // 3. Fallback adicional de configuración institucional para tolerancia
+  // 3. Obtener tolerancia: priorizar la configuración institucional establecida en la sección Configuración
+  const config = await confRepo.findByInstitucion(id_institucion);
   let tolerancia = 10;
-  if (horario && horario.tolerancia_entrada_min != null) {
+  if (config && config.tolerancia_entrada_min != null) {
+    tolerancia = config.tolerancia_entrada_min;
+  } else if (horario && horario.tolerancia_entrada_min != null) {
     tolerancia = horario.tolerancia_entrada_min;
-  } else {
-    const config = await confRepo.findByInstitucion(id_institucion);
-    if (config && config.tolerancia_entrada_min != null) {
-      tolerancia = config.tolerancia_entrada_min;
-    }
   }
 
   // 4. Si hay horario con hora_inicio, evaluar hora en Lima con tolerancia
@@ -426,11 +424,110 @@ const resumen = async (id_institucion, q) => {
   };
 };
 
+/**
+ * Busca un registro de asistencia ya sea por su id_asistencia primario
+ * o por el id_estudiante con la fecha actual de Perú.
+ */
+async function resolverAsistencia(idParam, id_institucion) {
+  let reg = await repo.findById(idParam);
+  if (!reg) {
+    const fecha = getFechaHoy();
+    reg = await repo.findByEstudianteYFecha(idParam, fecha);
+  }
+  return reg;
+}
+
+/**
+ * Actualiza o corrige una asistencia registrada previamente (por ejemplo, corregir
+ * si se marcó a un alumno que no vino, cambiándolo a FALTA o JUSTIFICADO, etc.)
+ */
+async function actualizarAsistencia(usuario, idParam, body) {
+  const { id_institucion } = usuario;
+  const reg = await resolverAsistencia(idParam, id_institucion);
+  if (!reg) {
+    throw new AppError('Registro de asistencia no encontrado.', 'NOT_FOUND', 404);
+  }
+
+  const matricula = await matRepo.findActivaByEstudiante(reg.id_estudiante, id_institucion);
+  if (!matricula) {
+    const mRow = await matRepo.findById(reg.id_matricula);
+    if (!mRow || String(mRow.id_institucion) !== String(id_institucion)) {
+      throw new AppError('Sin permisos para modificar esta asistencia.', 'FORBIDDEN', 403);
+    }
+    validarPermisoDocenteTutor(usuario, mRow);
+  } else {
+    validarPermisoDocenteTutor(usuario, matricula);
+  }
+
+  const estadosValidos = ['PRESENTE', 'TARDANZA', 'FALTA', 'JUSTIFICADO'];
+  const nuevoEstado = (body.estado_asistencia || reg.estado_asistencia).toUpperCase();
+  if (!estadosValidos.includes(nuevoEstado)) {
+    throw new AppError(`Estado de asistencia inválido. Opciones: ${estadosValidos.join(', ')}`, 'INVALID_STATUS', 400);
+  }
+
+  const datosUpdate = {
+    estado_asistencia: nuevoEstado,
+    observaciones: body.observaciones !== undefined ? body.observaciones : reg.observaciones,
+    registrado_por: usuario.id_usuario || null,
+    rol_registro: usuario.rol || null,
+  };
+
+  if (body.hora_entrada !== undefined) {
+    datosUpdate.hora_entrada = body.hora_entrada;
+  } else if (nuevoEstado === 'FALTA' && body.conservar_horas !== true) {
+    datosUpdate.hora_entrada = null;
+    datosUpdate.hora_salida = null;
+  }
+
+  if (body.hora_salida !== undefined) {
+    datosUpdate.hora_salida = body.hora_salida;
+  }
+
+  const actualizado = await repo.actualizar(reg.id_asistencia, datosUpdate);
+  return {
+    ...actualizado,
+    _accion: 'ACTUALIZADO',
+  };
+}
+
+/**
+ * Elimina o anula un registro de asistencia (por ejemplo, si se marcó por error
+ * a un estudiante que no vino y se desea dejarlo sin registro / pendiente).
+ */
+async function eliminarAsistencia(usuario, idParam) {
+  const { id_institucion } = usuario;
+  const reg = await resolverAsistencia(idParam, id_institucion);
+  if (!reg) {
+    throw new AppError('Registro de asistencia no encontrado.', 'NOT_FOUND', 404);
+  }
+
+  const matricula = await matRepo.findActivaByEstudiante(reg.id_estudiante, id_institucion);
+  if (matricula) {
+    validarPermisoDocenteTutor(usuario, matricula);
+  } else {
+    const mRow = await matRepo.findById(reg.id_matricula);
+    if (!mRow || String(mRow.id_institucion) !== String(id_institucion)) {
+      throw new AppError('Sin permisos para eliminar esta asistencia.', 'FORBIDDEN', 403);
+    }
+    validarPermisoDocenteTutor(usuario, mRow);
+  }
+
+  await repo.eliminar(reg.id_asistencia);
+  return {
+    ok: true,
+    mensaje: 'Registro de asistencia eliminado exitosamente.',
+    id_asistencia: reg.id_asistencia,
+    id_estudiante: reg.id_estudiante,
+  };
+}
+
 module.exports = {
   determinarEstadoEntrada,
   registrarPorQR,
   registrarManual,
   registrarSalida,
+  actualizarAsistencia,
+  eliminarAsistencia,
   buscarParaDirector,
   cerrarDia,
   consultarPorEstudiante,

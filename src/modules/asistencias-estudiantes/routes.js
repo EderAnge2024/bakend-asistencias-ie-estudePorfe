@@ -13,6 +13,9 @@ router.post('/manual',                           autenticar, ADMIN,      ctrl.re
 router.post('/registro-manual',                  autenticar, ADMIN,      ctrl.registrarManual);
 router.post('/salida/:id_estudiante',            autenticar, ADMIN,      ctrl.salida);
 router.post('/:id_estudiante/salida',            autenticar, ADMIN,      ctrl.salida);
+router.put('/:id',                               autenticar, ADMIN,      ctrl.actualizar);
+router.patch('/:id',                             autenticar, ADMIN,      ctrl.actualizar);
+router.delete('/:id',                            autenticar, ADMIN,      ctrl.eliminar);
 router.post('/cerrar-dia',                       autenticar, SOLO_ADMIN, ctrl.cerrarDia);
 
 router.get('/buscar',                            autenticar, SOLO_ADMIN, ctrl.buscarParaDirector);

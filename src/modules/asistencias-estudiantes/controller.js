@@ -19,6 +19,8 @@ const registrarQR = async (req, res, next) => {
 };
 
 const registrarManual   = async (req,res,next) => { try { created(res, await svc.registrarManual(req.user, req.body), 'Asistencia registrada.'); } catch(e){next(e);} };
+const actualizar        = async (req,res,next) => { try { ok(res, await svc.actualizarAsistencia(req.user, req.params.id, req.body), 'Asistencia actualizada.'); } catch(e){next(e);} };
+const eliminar          = async (req,res,next) => { try { ok(res, await svc.eliminarAsistencia(req.user, req.params.id), 'Asistencia eliminada.'); } catch(e){next(e);} };
 const salida            = async (req,res,next) => { try { ok(res, await svc.registrarSalida(req.user, req.params.id_estudiante), 'Salida registrada.'); } catch(e){next(e);} };
 const buscarParaDirector= async (req,res,next) => { try { ok(res, await svc.buscarParaDirector(req.user, req.query)); } catch(e){next(e);} };
 const porEstudiante     = async (req,res,next) => { try { ok(res, await svc.consultarPorEstudiante(req.params.id_estudiante, req.query)); } catch(e){next(e);} };
@@ -30,6 +32,8 @@ const informeMensual    = async (req,res,next) => { try { ok(res, await svc.info
 module.exports = {
   registrarQR,
   registrarManual,
+  actualizar,
+  eliminar,
   salida,
   buscarParaDirector,
   porEstudiante,

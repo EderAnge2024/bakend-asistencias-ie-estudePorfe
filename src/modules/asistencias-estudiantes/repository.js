@@ -321,7 +321,45 @@ const findInformeMensual = async (id_institucion, mes, anio, filtros = {}) => {
   });
 };
 
+const findById = async (id_asistencia) => {
+  const { rows } = await db.query(
+    'SELECT * FROM asistencias_estudiantes WHERE id_asistencia = $1',
+    [id_asistencia]
+  );
+  return rows[0] || null;
+};
+
+const actualizar = async (id_asistencia, d) => {
+  const campos = []; const vals = []; let i = 1;
+  const permitidos = ['estado_asistencia', 'hora_entrada', 'hora_salida', 'observaciones', 'registrado_por', 'rol_registro', 'metodo_registro'];
+  for (const k of permitidos) {
+    if (d[k] !== undefined) {
+      campos.push(`${k} = $${i++}`);
+      vals.push(d[k]);
+    }
+  }
+  if (!campos.length) return null;
+  campos.push('updated_at = CURRENT_TIMESTAMP');
+  vals.push(id_asistencia);
+  const { rows } = await db.query(
+    `UPDATE asistencias_estudiantes SET ${campos.join(', ')} WHERE id_asistencia = $${i} RETURNING *`,
+    vals
+  );
+  return rows[0] || null;
+};
+
+const eliminar = async (id_asistencia) => {
+  const { rows } = await db.query(
+    'DELETE FROM asistencias_estudiantes WHERE id_asistencia = $1 RETURNING *',
+    [id_asistencia]
+  );
+  return rows[0] || null;
+};
+
 module.exports = {
+  findById,
+  actualizar,
+  eliminar,
   findByEstudianteYFecha,
   registrar,
   registrarSalida,

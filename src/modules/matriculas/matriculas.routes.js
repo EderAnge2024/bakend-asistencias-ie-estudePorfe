@@ -9,4 +9,5 @@ router.get('/estudiante/:id_estudiante/activa', autenticar, ADMIN, ctrl.matricul
 router.get('/:id',                        autenticar, ADMIN, ctrl.obtener);
 router.post('/',                          autenticar, ADMIN, ctrl.crear);
 router.put('/:id',                        autenticar, ADMIN, ctrl.actualizar);
+router.patch('/:id/estado',               autenticar, ADMIN, ctrl.cambiarEstado);
 module.exports = router;
